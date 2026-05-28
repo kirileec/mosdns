@@ -218,7 +218,11 @@ func NewUpstream(addr string, opt Opt) (_ Upstream, err error) {
 
 		// Socks5 enabled.
 		if s5Addr := opt.Socks5; len(s5Addr) > 0 {
-			socks5Dialer, err := proxy.SOCKS5("tcp", s5Addr, nil, dialer)
+			socks5Addr, socks5Auth, err := parseSocks5Addr(s5Addr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid socks5 addr: %w", err)
+			}
+			socks5Dialer, err := proxy.SOCKS5("tcp", socks5Addr, socks5Auth, dialer)
 			if err != nil {
 				return nil, fmt.Errorf("failed to init socks5 dialer: %w", err)
 			}

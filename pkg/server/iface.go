@@ -20,7 +20,8 @@ type Handler interface {
 }
 
 type QueryMeta struct {
-	FromUDP bool
+	FromUDP  bool
+	Protocol string
 
 	// Optional
 	ClientAddr netip.Addr

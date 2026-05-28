@@ -193,6 +193,9 @@ func (m *Mosdns) GetAPIRouter() *chi.Mux {
 }
 
 func (m *Mosdns) RegPluginAPI(tag string, mux *chi.Mux) {
+	m.httpMux.Get("/plugins/"+tag, func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, req.URL.Path+"/", http.StatusMovedPermanently)
+	})
 	m.httpMux.Mount("/plugins/"+tag, mux)
 }
 

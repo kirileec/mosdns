@@ -8,5 +8,7 @@ RUN go build -ldflags "-s -w -X main.version=$(git describe --tags --long --alwa
 FROM alpine:latest
 
 COPY --from=builder /root/src/mosdns /usr/bin/
+WORKDIR /etc/mosdns
+COPY --from=builder /root/src/webui ./webui
 
 RUN apk add --no-cache ca-certificates

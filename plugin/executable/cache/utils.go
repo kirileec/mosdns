@@ -20,6 +20,7 @@
 package cache
 
 import (
+	"encoding/binary"
 	"hash/maphash"
 	"time"
 
@@ -40,7 +41,7 @@ func (k key) Sum() uint64 {
 
 // getMsgKey returns a string key for the query msg, or an empty
 // string if query should not be cached.
-func getMsgKey(q *dns.Msg) string {
+func getMsgKey(q *dns.Msg, clientOpt *dns.OPT) string {
 	if q.Response || q.Opcode != dns.OpcodeQuery || len(q.Question) != 1 {
 		return ""
 	}
@@ -52,7 +53,11 @@ func getMsgKey(q *dns.Msg) string {
 	)
 
 	question := q.Question[0]
-	buf := make([]byte, 1+2+1+len(question.Name)) // bits + qtype + qname length + qname
+	ecs := getECS(clientOpt)
+	if len(ecs) == 0 {
+		ecs = getECS(q.IsEdns0())
+	}
+	buf := make([]byte, 1+2+1+len(question.Name)+len(ecs)) // bits + qtype + qname length + qname + ecs
 	b := byte(0)
 	// RFC 6840 5.7: The AD bit in a query as a signal
 	// indicating that the requester understands and is interested in the
@@ -71,7 +76,61 @@ func getMsgKey(q *dns.Msg) string {
 	buf[2] = byte(question.Qtype)
 	buf[3] = byte(len(question.Name))
 	copy(buf[4:], question.Name)
+	copy(buf[4+len(question.Name):], ecs)
 	return utils.BytesToStringUnsafe(buf)
+}
+
+func getECS(opt *dns.OPT) []byte {
+	if opt == nil {
+		return nil
+	}
+	for _, o := range opt.Option {
+		ecs, ok := o.(*dns.EDNS0_SUBNET)
+		if !ok {
+			continue
+		}
+
+		addr := ecs.Address.To16()
+		if addr == nil {
+			return nil
+		}
+		buf := make([]byte, 4+len(addr))
+		binary.BigEndian.PutUint16(buf[0:2], ecs.Family)
+		buf[2] = ecs.SourceNetmask
+		buf[3] = ecs.SourceScope
+		copy(buf[4:], addr)
+		return buf
+	}
+	return nil
+}
+
+func cacheKeyVariants(q *dns.Msg) []*dns.Msg {
+	if q == nil {
+		return nil
+	}
+	variants := make([]*dns.Msg, 0, 8)
+	for bits := 0; bits < 8; bits++ {
+		v := q.Copy()
+		v.AuthenticatedData = bits&1 != 0
+		v.CheckingDisabled = bits&2 != 0
+		setDO(v, bits&4 != 0)
+		variants = append(variants, v)
+	}
+	return variants
+}
+
+func setDO(q *dns.Msg, enabled bool) {
+	opt := q.IsEdns0()
+	if opt == nil {
+		if !enabled {
+			return
+		}
+		opt = new(dns.OPT)
+		opt.Hdr.Name = "."
+		opt.Hdr.Rrtype = dns.TypeOPT
+		q.Extra = append(q.Extra, opt)
+	}
+	opt.SetDo(enabled)
 }
 
 type item struct {

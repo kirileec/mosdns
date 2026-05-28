@@ -68,6 +68,7 @@ const (
 )
 
 var _ sequence.RecursiveExecutable = (*Cache)(nil)
+var _ runtime_stats.CacheRefresher = (*Cache)(nil)
 
 type Args struct {
 	Size         int    `yaml:"size"`
@@ -197,7 +198,7 @@ func (c *Cache) Exec(ctx context.Context, qCtx *query_context.Context, next sequ
 	c.queryCount.Add(1)
 	q := qCtx.Q()
 
-	msgKey := getMsgKey(q)
+	msgKey := getMsgKey(q, qCtx.ClientOpt())
 	if len(msgKey) == 0 { // skip cache
 		return next.ExecNext(ctx, qCtx)
 	}
@@ -213,6 +214,7 @@ func (c *Cache) Exec(ctx context.Context, qCtx *query_context.Context, next sequ
 		c.hitCount.Add(1)
 		cachedResp.Id = q.Id // change msg id
 		qCtx.SetResponse(cachedResp)
+		runtime_stats.MarkCacheHit(qCtx)
 	}
 
 	err := next.ExecNext(ctx, qCtx)
@@ -239,6 +241,22 @@ func (c *Cache) CacheStats() runtime_stats.CacheStats {
 		Size:         c.backend.Len(),
 		HitRate:      hitRate,
 	}
+}
+
+func (c *Cache) RemoveCache(q *dns.Msg) int {
+	removed := 0
+	for _, variant := range cacheKeyVariants(q) {
+		msgKey := getMsgKey(variant, nil)
+		if len(msgKey) == 0 {
+			continue
+		}
+		k := key(msgKey)
+		if _, _, ok := c.backend.Get(k); ok {
+			c.backend.Delete(k)
+			removed++
+		}
+	}
+	return removed
 }
 
 // doLazyUpdate starts a new goroutine to execute next node and update the cache in the background.

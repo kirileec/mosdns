@@ -3,6 +3,7 @@ package runtime_stats
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,10 +22,14 @@ const (
 type QueryRecord struct {
 	Time      time.Time `json:"time"`
 	Client    string    `json:"client,omitempty"`
+	Protocol  string    `json:"protocol,omitempty"`
+	CacheHit  bool      `json:"cache_hit,omitempty"`
 	QName     string    `json:"qname"`
 	QType     uint16    `json:"qtype"`
 	QClass    uint16    `json:"qclass"`
 	RCode     int       `json:"rcode"`
+	Answers   []string  `json:"answers,omitempty"`
+	TTLs      []uint32  `json:"ttls,omitempty"`
 	ElapsedMS int64     `json:"elapsed_ms"`
 	Error     string    `json:"error,omitempty"`
 }
@@ -53,6 +58,21 @@ type Snapshot struct {
 	Domains  []NamedCount `json:"domains"`
 }
 
+type LogQuery struct {
+	Limit    int
+	Offset   int
+	Search   string
+	Protocol string
+	RCode    *int
+}
+
+type LogPage struct {
+	Rows   []QueryRecord `json:"rows"`
+	Total  int           `json:"total"`
+	Limit  int           `json:"limit"`
+	Offset int           `json:"offset"`
+}
+
 type CacheStats struct {
 	Tag          string  `json:"tag"`
 	QueryTotal   uint64  `json:"query_total"`
@@ -64,6 +84,10 @@ type CacheStats struct {
 
 type CacheStatsProvider interface {
 	CacheStats() CacheStats
+}
+
+type CacheRefresher interface {
+	RemoveCache(q *dns.Msg) int
 }
 
 type UpstreamStats struct {
@@ -85,6 +109,17 @@ type UpstreamStats struct {
 
 type UpstreamStatsProvider interface {
 	UpstreamStats() []UpstreamStats
+}
+
+var cacheHitKey = query_context.RegKey()
+
+func MarkCacheHit(qCtx *query_context.Context) {
+	qCtx.StoreValue(cacheHitKey, true)
+}
+
+func isCacheHit(qCtx *query_context.Context) bool {
+	v, ok := qCtx.GetValue(cacheHitKey)
+	return ok && v == true
 }
 
 type Stats struct {
@@ -150,23 +185,63 @@ func (s *Stats) RecordQuery(qCtx *query_context.Context, resp *dns.Msg, execErr 
 	question := qCtx.QQuestion()
 	r := QueryRecord{
 		Time:      now,
+		CacheHit:  isCacheHit(qCtx),
 		QName:     question.Name,
 		QType:     question.Qtype,
 		QClass:    question.Qclass,
 		RCode:     dns.RcodeServerFailure,
 		ElapsedMS: time.Since(qCtx.StartTime()).Milliseconds(),
 	}
+	r.Protocol = qCtx.ServerMeta.Protocol
+	if r.Protocol == "" {
+		if qCtx.ServerMeta.FromUDP {
+			r.Protocol = "udp"
+		} else {
+			r.Protocol = "tcp"
+		}
+	}
 	if clientAddr := qCtx.ServerMeta.ClientAddr; clientAddr.IsValid() {
 		r.Client = clientAddr.String()
 	}
 	if resp != nil {
 		r.RCode = resp.Rcode
+		r.Answers, r.TTLs = extractAnswers(resp)
 	}
 	if execErr != nil {
 		r.Error = execErr.Error()
 	}
 
 	s.record(r)
+}
+
+func extractAnswers(resp *dns.Msg) ([]string, []uint32) {
+	if resp == nil || len(resp.Answer) == 0 {
+		return nil, nil
+	}
+	answers := make([]string, 0, len(resp.Answer))
+	ttls := make([]uint32, 0, len(resp.Answer))
+	for _, rr := range resp.Answer {
+		ttls = append(ttls, rr.Header().Ttl)
+		switch v := rr.(type) {
+		case *dns.A:
+			answers = append(answers, v.A.String())
+		case *dns.AAAA:
+			answers = append(answers, v.AAAA.String())
+		case *dns.CNAME:
+			answers = append(answers, v.Target)
+		case *dns.PTR:
+			answers = append(answers, v.Ptr)
+		case *dns.MX:
+			answers = append(answers, v.Mx)
+		case *dns.NS:
+			answers = append(answers, v.Ns)
+		case *dns.TXT:
+			answers = append(answers, strings.Join(v.Txt, " "))
+		default:
+			answers = append(answers, rr.String())
+		}
+	}
+	return answers, ttls
 }
 
 func (s *Stats) record(r QueryRecord) {
@@ -265,6 +340,72 @@ func (s *Stats) RecentLogs(limit int) []QueryRecord {
 		out = append(out, s.logs[idx])
 	}
 	return out
+}
+
+func (s *Stats) QueryLogs(q LogQuery) LogPage {
+	const defaultLimit = 50
+	const maxLimit = 200
+	if q.Limit <= 0 {
+		q.Limit = defaultLimit
+	}
+	if q.Limit > maxLimit {
+		q.Limit = maxLimit
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	q.Search = strings.ToLower(strings.TrimSpace(q.Search))
+	q.Protocol = strings.ToLower(strings.TrimSpace(q.Protocol))
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	max := s.logHead
+	if s.logFull {
+		max = len(s.logs)
+	}
+	out := make([]QueryRecord, 0, q.Limit)
+	total := 0
+	for i := 0; i < max; i++ {
+		idx := s.logHead - 1 - i
+		if idx < 0 {
+			idx += len(s.logs)
+		}
+		r := s.logs[idx]
+		if !matchLog(r, q) {
+			continue
+		}
+		if total >= q.Offset && len(out) < q.Limit {
+			out = append(out, r)
+		}
+		total++
+	}
+	return LogPage{Rows: out, Total: total, Limit: q.Limit, Offset: q.Offset}
+}
+
+func matchLog(r QueryRecord, q LogQuery) bool {
+	if q.Protocol != "" && strings.ToLower(r.Protocol) != q.Protocol {
+		return false
+	}
+	if q.RCode != nil && r.RCode != *q.RCode {
+		return false
+	}
+	if q.Search == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(r.QName), q.Search) ||
+		strings.Contains(strings.ToLower(r.Client), q.Search) ||
+		strings.Contains(strings.ToLower(r.Protocol), q.Search) ||
+		strings.Contains(strings.ToLower(r.Error), q.Search) ||
+		(r.CacheHit && strings.Contains("cache", q.Search)) ||
+		(!r.CacheHit && strings.Contains("upstream", q.Search)) {
+		return true
+	}
+	for _, answer := range r.Answers {
+		if strings.Contains(strings.ToLower(answer), q.Search) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Stats) Subscribe() (chan QueryRecord, func()) {

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>mosdns WebUI</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <section class="login-page" id="loginPage" aria-labelledby="loginTitle">
+      <div class="login-hero" aria-hidden="true">
+        <div class="login-orb"></div>
+        <div class="login-hero-card">
+          <span data-i18n="loginHeroKicker">Secure DNS Control</span>
+          <strong>mosdns</strong>
+          <p data-i18n="loginHeroText">View realtime queries, upstream status, and configuration after signing in.</p>
+        </div>
+      </div>
+      <form class="login-card" id="loginForm">
+        <div class="brand login-brand">
+          <div class="brand-mark" aria-hidden="true">m</div>
+          <div>
+            <div class="brand-name">mosdns</div>
+            <div class="brand-subtitle">Realtime DNS Control</div>
+          </div>
+        </div>
+        <p class="eyebrow" data-i18n="loginEyebrow">WebUI access</p>
+        <h1 id="loginTitle" data-i18n="loginTitle">Sign in</h1>
+        <p class="login-copy" data-i18n="loginCopy">Use the WebUI username and password configured in mosdns.</p>
+        <label class="login-field">
+          <span data-i18n="loginUsername">Username</span>
+          <input id="loginUsername" name="username" type="text" autocomplete="username" required>
+        </label>
+        <label class="login-field">
+          <span data-i18n="loginPassword">Password</span>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="button primary login-submit" type="submit" id="loginButton" data-i18n="loginButton">Sign in</button>
+        <div class="message-line login-message" id="loginMessage" role="status" aria-live="polite"></div>
+        <button class="button ghost language-toggle login-language" type="button" id="loginLanguageToggle" aria-label="Switch language" data-i18n-attr="aria-label:languageToggleAria">中文</button>
+      </form>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
+      <aside class="sidebar" aria-label="主导航" data-i18n-attr="aria-label:sidebarNavAria">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">m</div>
+          <div>
+            <div class="brand-name">mosdns</div>
+            <div class="brand-subtitle">Realtime DNS Control</div>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="页面" data-i18n-attr="aria-label:pageNavAria">
+          <a class="nav-item is-active" href="#dashboard" data-view="dashboard">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 13h7V4H4v9Zm0 7h7v-5H4v5Zm9 0h7v-9h-7v9Zm0-16v5h7V4h-7Z"/></svg></span>
+            <span data-i18n="navDashboard">Dashboard</span>
+          </a>
+          <a class="nav-item" href="#logs" data-view="logs">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v2H5V4Zm0 4h14v2H5V8Zm0 4h9v2H5v-2Zm0 4h14v2H5v-2Z"/></svg></span>
+            <span data-i18n="navLogs">Query Logs</span>
+          </a>
+          <a class="nav-item" href="#upstreams" data-view="upstreams">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Zm0 2.3L18.8 8 12 11.7 5.2 8 12 4.3ZM5 9.7l6 3.3v6.7l-6-3.3V9.7Zm8 10V13l6-3.3v6.7l-6 3.3Z"/></svg></span>
+            <span data-i18n="navUpstreams">Upstreams</span>
+          </a>
+          <a class="nav-item" href="#config" data-view="config">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5V3Zm9 1.5V8h3.5L14 4.5ZM7 11h10v2H7v-2Zm0 4h10v2H7v-2Z"/></svg></span>
+            <span data-i18n="navConfig">Config</span>
+          </a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="storage-card">
+            <div class="storage-label" data-i18n="storageLabel">Storage</div>
+            <div class="storage-status" id="storageStatus">Memory only</div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" data-i18n="eyebrow">DNS observability</p>
+            <h1 id="viewTitle">Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="button ghost language-toggle" type="button" id="languageToggle" aria-label="Switch language" data-i18n-attr="aria-label:languageToggleAria">中文</button>
+            <span class="live-pill" id="liveStatus"><span></span> <span data-i18n="liveStatus">Live</span></span>
+            <button class="button ghost" type="button" id="refreshButton" data-i18n="refreshButton">Refresh</button>
+            <button class="button ghost" type="button" id="logoutButton" data-i18n="logoutButton">Logout</button>
+          </div>
+        </header>
+
+        <section class="view is-visible" id="dashboardView" aria-labelledby="viewTitle">
+          <div class="metric-grid">
+            <article class="metric-card accent-green">
+              <span class="metric-label" data-i18n="metricTotalQueries">Total Queries</span>
+              <strong class="metric-value" id="totalQueries">0</strong>
+              <span class="metric-hint" data-i18n="metricTotalQueriesHint">累计处理请求</span>
+            </article>
+            <article class="metric-card accent-cyan">
+              <span class="metric-label" data-i18n="metricQps">QPS</span>
+              <strong class="metric-value" id="qps">0.00</strong>
+              <span class="metric-hint" data-i18n="metricQpsHint">最近 10 秒平均</span>
+            </article>
+            <article class="metric-card accent-amber">
+              <span class="metric-label" data-i18n="metricAvgLatency">Avg Latency</span>
+              <strong class="metric-value"><span id="avgLatency">0</span><small>ms</small></strong>
+              <span class="metric-hint" data-i18n="metricAvgLatencyHint">端到端查询耗时</span>
+            </article>
+            <article class="metric-card accent-violet">
+              <span class="metric-label" data-i18n="metricCacheHitRate">Cache Hit Rate</span>
+              <strong class="metric-value"><span id="cacheHitRate">0</span><small>%</small></strong>
+              <span class="metric-hint" id="cacheSizeHint">0 records</span>
+            </article>
+          </div>
+
+          <article class="panel cache-refresh-panel">
+            <div class="panel-header">
+              <div>
+                  <h2 data-i18n="refreshCacheTitle">Refresh Domain Cache</h2>
+                  <p data-i18n="refreshCacheDesc">强制移除指定域名缓存，并立即重新查询写入缓存</p>
+              </div>
+            </div>
+            <div class="cache-refresh-form">
+              <input class="filter-input" id="cacheRefreshDomain" type="text" placeholder="example.com" autocomplete="off">
+              <select class="filter-select" id="cacheRefreshType" aria-label="缓存刷新类型" data-i18n-attr="aria-label:cacheRefreshTypeAria">
+                <option value="ALL">A + AAAA</option>
+                <option value="A">A</option>
+                <option value="AAAA">AAAA</option>
+                <option value="HTTPS">HTTPS</option>
+              </select>
+              <input class="filter-input entry-input" id="cacheRefreshEntry" type="text" value="main_sequence" aria-label="刷新入口插件" data-i18n-attr="aria-label:cacheRefreshEntryAria">
+              <button class="button primary" type="button" id="cacheRefreshButton" data-i18n="refreshCacheButton">Refresh Cache</button>
+            </div>
+            <div class="cache-refresh-result" id="cacheRefreshResult" data-i18n="refreshCacheInitial">输入域名后点击刷新。</div>
+          </article>
+
+          <div class="dashboard-grid">
+            <article class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="hourlyQueriesTitle">Hourly Queries</h2>
+                  <p data-i18n="hourlyQueriesDesc">最近小时级请求分布</p>
+                </div>
+              </div>
+              <div class="bar-chart" id="hourlyChart" aria-label="每小时查询次数" data-i18n-attr="aria-label:hourlyChartAria"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="domainTopTitle">Domain Top 10</h2>
+                  <p data-i18n="domainTopDesc">请求最频繁的域名</p>
+                </div>
+              </div>
+              <div class="rank-list" id="domainTop"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="topClientsTitle">Top Clients</h2>
+                  <p data-i18n="topClientsDesc">客户端请求量排行</p>
+                </div>
+              </div>
+              <div class="rank-list" id="clientTop"></div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="realtimeTailTitle">Realtime Query Tail</h2>
+                  <p data-i18n="realtimeTailDesc">最近 10 条请求</p>
+                </div>
+                <a class="link-button" href="#logs" data-view="logs" data-i18n="openLogs">Open logs</a>
+              </div>
+              <div class="log-table compact" id="recentLogTable"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="logsView">
+          <article class="panel full-height">
+            <div class="panel-header">
+              <div>
+                  <h2 data-i18n="queryLogsTitle">Realtime Query Logs</h2>
+                  <p data-i18n="queryLogsDesc">SSE 实时推送，保留最近查询记录</p>
+              </div>
+              <div class="log-actions">
+                <input class="filter-input" id="logSearch" type="search" placeholder="搜索域名 / 客户端 / 响应地址" data-i18n-attr="placeholder:logSearchPlaceholder">
+                <select class="filter-select" id="protocolFilter" aria-label="协议筛选" data-i18n-attr="aria-label:protocolFilterAria">
+                  <option value="" data-i18n="allProtocols">All protocols</option>
+                  <option value="udp">UDP</option>
+                  <option value="tcp">TCP</option>
+                  <option value="dot">DoT</option>
+                  <option value="doh">DoH</option>
+                  <option value="doq">DoQ</option>
+                </select>
+                <select class="filter-select" id="rcodeFilter" aria-label="响应码筛选" data-i18n-attr="aria-label:rcodeFilterAria">
+                  <option value="" data-i18n="allRcodes">All rcodes</option>
+                  <option value="0">NOERROR</option>
+                  <option value="3">NXDOMAIN</option>
+                  <option value="2">SERVFAIL</option>
+                </select>
+                <button class="button primary" type="button" id="searchLogButton" data-i18n="searchButton">Search</button>
+                <button class="button ghost" type="button" id="resetLogButton" data-i18n="resetButton">Reset</button>
+              </div>
+            </div>
+            <div class="log-table" id="logTable"></div>
+            <div class="log-pager" id="logPager">
+               <button class="button ghost" type="button" id="prevLogPage" data-i18n="prevButton">Prev</button>
+              <span id="logPageInfo">Page 1 / 1 · 0 results</span>
+               <button class="button ghost" type="button" id="nextLogPage" data-i18n="nextButton">Next</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" id="upstreamsView">
+          <div class="dashboard-grid">
+            <article class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="upstreamServersTitle">Upstream Servers</h2>
+                  <p data-i18n="upstreamServersDesc">状态、延迟、成功率和并发请求</p>
+                </div>
+              </div>
+              <div class="upstream-grid" id="upstreamGrid"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 data-i18n="cachePluginsTitle">Cache Plugins</h2>
+                  <p data-i18n="cachePluginsDesc">缓存命中和容量</p>
+                </div>
+              </div>
+              <div class="cache-list" id="cacheList"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="configView">
+          <article class="panel config-panel">
+            <div class="panel-header">
+              <div>
+                <h2 data-i18n="configurationTitle">Configuration</h2>
+                <p data-i18n="configurationDesc">编辑当前主配置文件。保存前会自动创建 .bak 备份。</p>
+              </div>
+              <div class="config-actions">
+                <button class="button ghost" type="button" id="loadConfigButton" data-i18n="loadButton">Load</button>
+                <button class="button ghost" type="button" id="validateConfigButton" data-i18n="validateButton">Validate</button>
+                <button class="button primary" type="button" id="saveConfigButton" data-i18n="saveButton">Save</button>
+                <button class="button danger" type="button" id="reloadConfigButton" data-i18n="reloadButton">Reload</button>
+              </div>
+            </div>
+            <textarea id="configEditor" spellcheck="false" aria-label="mosdns config"></textarea>
+            <div class="message-line" id="configMessage" data-i18n="configInitialMessage">配置重载按钮为占位功能，初版暂不执行真实 reload。</div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="logDetailModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="logDetailTitle">
+        <div class="modal-header">
+          <h2 id="logDetailTitle" data-i18n="queryDetailTitle">Query Detail</h2>
+          <button class="icon-button" type="button" id="closeLogDetail" aria-label="Close detail" data-i18n-attr="aria-label:closeDetailAria">×</button>
+        </div>
+        <div class="detail-grid" id="logDetailBody"></div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

@@ -23,7 +23,11 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"strconv"
+	"strings"
+
+	"golang.org/x/net/proxy"
 )
 
 type socketOpts struct {
@@ -87,6 +91,33 @@ func parseBootstrapAp(s string) (netip.AddrPort, error) {
 		return netip.AddrPort{}, err
 	}
 	return netip.AddrPortFrom(addr, port), nil
+}
+
+func parseSocks5Addr(s string) (string, *proxy.Auth, error) {
+	if !strings.Contains(s, "://") {
+		return s, nil, nil
+	}
+
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", nil, err
+	}
+	if u.Scheme != "socks5" {
+		return "", nil, fmt.Errorf("unsupported socks5 scheme %q", u.Scheme)
+	}
+	if len(u.Host) == 0 {
+		return "", nil, fmt.Errorf("missing socks5 host")
+	}
+
+	var auth *proxy.Auth
+	if u.User != nil {
+		password, _ := u.User.Password()
+		auth = &proxy.Auth{
+			User:     u.User.Username(),
+			Password: password,
+		}
+	}
+	return u.Host, auth, nil
 }
 
 func tryTrimIpv6Brackets(s string) string {
