@@ -1,4 +1,4 @@
-FROM golang:1.25.0 as builder
+FROM golang:latest as builder
 ARG CGO_ENABLED=0
 
 COPY ./ /root/src/
