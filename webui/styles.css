@@ -340,7 +340,11 @@ p { margin: 0; }
 .log-pager { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 13px; }
 .log-pager .button:disabled { cursor: not-allowed; opacity: 0.45; }
 
-.upstream-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.upstream-grid { grid-template-columns: 1fr; }
+.upstream-group { display: grid; gap: 10px; }
+.upstream-group-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px; color: var(--muted-strong); font-weight: 900; }
+.upstream-group-header small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.upstream-group-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
 .upstream-card, .cache-item { padding: 14px; }
 .upstream-title { display: flex; justify-content: space-between; gap: 12px; font-weight: 800; }
 .status { padding: 3px 8px; border-radius: 999px; font-size: 12px; background: rgba(148, 163, 184, 0.12); color: var(--muted-strong); }

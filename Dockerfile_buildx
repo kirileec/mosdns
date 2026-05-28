@@ -14,3 +14,6 @@ WORKDIR /etc/mosdns
 COPY --from=builder /root/src/webui ./webui
 
 RUN apk add --no-cache ca-certificates
+
+ENTRYPOINT ["mosdns"]
+CMD ["start"]

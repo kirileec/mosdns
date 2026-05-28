@@ -101,6 +101,7 @@ const translations = {
     detailError: 'Error',
     upstreamServersTitle: 'Upstream Servers',
     upstreamServersDesc: 'Status, latency, success rate, and in-flight requests',
+    upstreamGroupCount: '{count} upstreams',
     noUpstreams: 'No tagged upstream statistics yet',
     statQueries: 'Queries',
     statSuccessRate: 'Success Rate',
@@ -226,6 +227,7 @@ const translations = {
     detailError: '错误',
     upstreamServersTitle: '上游服务器',
     upstreamServersDesc: '状态、延迟、成功率和并发请求',
+    upstreamGroupCount: '{count} 个上游',
     noUpstreams: '暂无带标签的上游统计',
     statQueries: '查询数',
     statSuccessRate: '成功率',
@@ -698,21 +700,7 @@ async function loadUpstreams() {
   if (!upstreams || upstreams.length === 0) {
     grid.innerHTML = empty(t('noUpstreams'));
   } else {
-    grid.innerHTML = upstreams.map((u) => `
-      <div class="upstream-card">
-        <div class="upstream-title">
-          <span>${escapeHtml(u.tag || 'upstream')}</span>
-          <span class="status ${escapeHtml(u.status || 'unknown')}">${escapeHtml(u.status || 'unknown')}</span>
-        </div>
-        <div class="upstream-addr" title="${escapeHtml(u.addr)}">${escapeHtml(u.addr || '-')}</div>
-        <div class="stat-pairs">
-          <div class="stat-pair"><span>${t('statQueries')}</span><strong>${fmtNumber(u.query_total)}</strong></div>
-          <div class="stat-pair"><span>${t('statSuccessRate')}</span><strong>${((u.success_rate || 0) * 100).toFixed(1)}%</strong></div>
-          <div class="stat-pair"><span>${t('statLastLatency')}</span><strong>${u.last_latency_ms || 0}ms</strong></div>
-          <div class="stat-pair"><span>${t('statInFlight')}</span><strong>${u.inflight || 0}</strong></div>
-        </div>
-      </div>
-    `).join('');
+    grid.innerHTML = renderUpstreamGroups(upstreams);
   }
 
   const list = $('cacheList');
@@ -731,6 +719,49 @@ async function loadUpstreams() {
       </div>
     `).join('');
   }
+}
+
+function renderUpstreamGroups(upstreams) {
+  const sorted = [...upstreams].sort((a, b) => String(a.forward_tag || '').localeCompare(String(b.forward_tag || '')));
+  const groups = [];
+  for (const upstream of sorted) {
+    const groupTag = upstream.forward_tag || 'forward';
+    let group = groups[groups.length - 1];
+    if (!group || group.tag !== groupTag) {
+      group = { tag: groupTag, items: [] };
+      groups.push(group);
+    }
+    group.items.push(upstream);
+  }
+  return groups.map((group) => `
+    <section class="upstream-group">
+      <div class="upstream-group-header">
+        <span>${escapeHtml(group.tag)}</span>
+        <small>${escapeHtml(t('upstreamGroupCount', { count: fmtNumber(group.items.length) }))}</small>
+      </div>
+      <div class="upstream-group-grid">
+        ${group.items.map(renderUpstreamCard).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function renderUpstreamCard(u) {
+  return `
+    <div class="upstream-card">
+      <div class="upstream-title">
+        <span>${escapeHtml(u.tag || 'upstream')}</span>
+        <span class="status ${escapeHtml(u.status || 'unknown')}">${escapeHtml(u.status || 'unknown')}</span>
+      </div>
+      <div class="upstream-addr" title="${escapeHtml(u.addr)}">${escapeHtml(u.addr || '-')}</div>
+      <div class="stat-pairs">
+        <div class="stat-pair"><span>${t('statQueries')}</span><strong>${fmtNumber(u.query_total)}</strong></div>
+        <div class="stat-pair"><span>${t('statSuccessRate')}</span><strong>${((u.success_rate || 0) * 100).toFixed(1)}%</strong></div>
+        <div class="stat-pair"><span>${t('statLastLatency')}</span><strong>${u.last_latency_ms || 0}ms</strong></div>
+        <div class="stat-pair"><span>${t('statInFlight')}</span><strong>${u.inflight || 0}</strong></div>
+      </div>
+    </div>
+  `;
 }
 
 async function loadConfig() {

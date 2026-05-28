@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -404,6 +405,9 @@ func (p *WebUI) handleUpstreams(w http.ResponseWriter, req *http.Request) {
 			out = append(out, provider.UpstreamStats()...)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ForwardTag < out[j].ForwardTag
+	})
 	writeJSON(w, out)
 }
 

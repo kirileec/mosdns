@@ -1,4 +1,4 @@
-FROM golang:latest as builder
+FROM golang:latest AS builder
 ARG CGO_ENABLED=0
 
 COPY ./ /root/src/
@@ -12,3 +12,6 @@ WORKDIR /etc/mosdns
 COPY --from=builder /root/src/webui ./webui
 
 RUN apk add --no-cache ca-certificates
+
+ENTRYPOINT ["mosdns"]
+CMD ["start"]
