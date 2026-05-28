@@ -31,6 +31,7 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/coremain"
 	"github.com/IrineSistiana/mosdns/v5/pkg/pool"
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
+	"github.com/IrineSistiana/mosdns/v5/pkg/runtime_stats"
 	"github.com/IrineSistiana/mosdns/v5/pkg/upstream"
 	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
@@ -232,6 +233,14 @@ func (f *Forward) Close() error {
 		_ = u.Close()
 	}
 	return nil
+}
+
+func (f *Forward) UpstreamStats() []runtime_stats.UpstreamStats {
+	out := make([]runtime_stats.UpstreamStats, 0, len(f.us))
+	for _, u := range f.us {
+		out = append(out, u.stats())
+	}
+	return out
 }
 
 func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us []*upstreamWrapper) (*dns.Msg, error) {

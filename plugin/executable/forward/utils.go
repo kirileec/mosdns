@@ -21,9 +21,12 @@ package fastforward
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/IrineSistiana/mosdns/v5/pkg/pool"
+	"github.com/IrineSistiana/mosdns/v5/pkg/runtime_stats"
 	"github.com/IrineSistiana/mosdns/v5/pkg/upstream"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,6 +44,18 @@ type upstreamWrapper struct {
 
 	connOpened prometheus.Counter
 	connClosed prometheus.Counter
+
+	pluginTag      string
+	queryCount     atomic.Uint64
+	successCount   atomic.Uint64
+	errorCount     atomic.Uint64
+	inflight       atomic.Int64
+	totalLatencyMS atomic.Int64
+	lastLatencyMS  atomic.Int64
+	lastMu         sync.RWMutex
+	lastSuccessAt  time.Time
+	lastErrorAt    time.Time
+	lastError      string
 }
 
 func (uw *upstreamWrapper) OnEvent(typ upstream.Event) {
@@ -57,7 +72,9 @@ func (uw *upstreamWrapper) OnEvent(typ upstream.Event) {
 func newWrapper(idx int, cfg UpstreamConfig, pluginTag string) *upstreamWrapper {
 	lb := map[string]string{"upstream": cfg.Tag, "tag": pluginTag}
 	return &upstreamWrapper{
-		cfg: cfg,
+		idx:       idx,
+		cfg:       cfg,
+		pluginTag: pluginTag,
 		queryTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name:        "query_total",
 			Help:        "The total number of queries processed by this upstream",
@@ -120,18 +137,78 @@ func (uw *upstreamWrapper) name() string {
 
 func (uw *upstreamWrapper) ExchangeContext(ctx context.Context, m []byte) (*[]byte, error) {
 	uw.queryTotal.Inc()
+	uw.queryCount.Add(1)
 
 	start := time.Now()
 	uw.thread.Inc()
+	uw.inflight.Add(1)
 	r, err := uw.u.ExchangeContext(ctx, m)
 	uw.thread.Dec()
+	uw.inflight.Add(-1)
+	latencyMS := time.Since(start).Milliseconds()
 
 	if err != nil {
 		uw.errTotal.Inc()
+		uw.errorCount.Add(1)
+		uw.lastMu.Lock()
+		uw.lastErrorAt = time.Now()
+		uw.lastError = err.Error()
+		uw.lastMu.Unlock()
 	} else {
-		uw.responseLatency.Observe(float64(time.Since(start).Milliseconds()))
+		uw.successCount.Add(1)
+		uw.totalLatencyMS.Add(latencyMS)
+		uw.lastLatencyMS.Store(latencyMS)
+		uw.lastMu.Lock()
+		uw.lastSuccessAt = time.Now()
+		uw.lastMu.Unlock()
+		uw.responseLatency.Observe(float64(latencyMS))
 	}
 	return r, err
+}
+
+func (uw *upstreamWrapper) stats() runtime_stats.UpstreamStats {
+	queryTotal := uw.queryCount.Load()
+	successTotal := uw.successCount.Load()
+	errorTotal := uw.errorCount.Load()
+	avgLatency := 0.0
+	if successTotal > 0 {
+		avgLatency = float64(uw.totalLatencyMS.Load()) / float64(successTotal)
+	}
+	successRate := 0.0
+	if queryTotal > 0 {
+		successRate = float64(successTotal) / float64(queryTotal)
+	}
+	uw.lastMu.RLock()
+	lastSuccessAt := uw.lastSuccessAt
+	lastErrorAt := uw.lastErrorAt
+	lastError := uw.lastError
+	uw.lastMu.RUnlock()
+	status := "unknown"
+	if successTotal > 0 {
+		status = "up"
+	}
+	if errorTotal > 0 && successRate < 0.8 {
+		status = "degraded"
+	}
+	if queryTotal > 0 && successTotal == 0 {
+		status = "down"
+	}
+	return runtime_stats.UpstreamStats{
+		ForwardTag:    uw.pluginTag,
+		Tag:           uw.name(),
+		Addr:          uw.cfg.Addr,
+		Status:        status,
+		QueryTotal:    queryTotal,
+		SuccessTotal:  successTotal,
+		ErrorTotal:    errorTotal,
+		InFlight:      uw.inflight.Load(),
+		LastLatencyMS: uw.lastLatencyMS.Load(),
+		AvgLatencyMS:  avgLatency,
+		SuccessRate:   successRate,
+		LastSuccessAt: lastSuccessAt,
+		LastErrorAt:   lastErrorAt,
+		LastError:     lastError,
+	}
 }
 
 func (uw *upstreamWrapper) Close() error {

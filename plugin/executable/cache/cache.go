@@ -36,6 +36,7 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/pkg/cache"
 	"github.com/IrineSistiana/mosdns/v5/pkg/pool"
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
+	"github.com/IrineSistiana/mosdns/v5/pkg/runtime_stats"
 	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"github.com/go-chi/chi/v5"
@@ -89,6 +90,10 @@ type Cache struct {
 	closeOnce    sync.Once
 	closeNotify  chan struct{}
 	updatedKey   atomic.Uint64
+	metricsTag   string
+	queryCount   atomic.Uint64
+	hitCount     atomic.Uint64
+	lazyHitCount atomic.Uint64
 
 	queryTotal   prometheus.Counter
 	hitTotal     prometheus.Counter
@@ -144,6 +149,7 @@ func NewCache(args *Args, opts Opts) *Cache {
 		logger:      logger,
 		backend:     backend,
 		closeNotify: make(chan struct{}),
+		metricsTag:  opts.MetricsTag,
 
 		queryTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name:        "query_total",
@@ -188,6 +194,7 @@ func (c *Cache) RegMetricsTo(r prometheus.Registerer) error {
 
 func (c *Cache) Exec(ctx context.Context, qCtx *query_context.Context, next sequence.ChainWalker) error {
 	c.queryTotal.Inc()
+	c.queryCount.Add(1)
 	q := qCtx.Q()
 
 	msgKey := getMsgKey(q)
@@ -198,10 +205,12 @@ func (c *Cache) Exec(ctx context.Context, qCtx *query_context.Context, next sequ
 	cachedResp, lazyHit := getRespFromCache(msgKey, c.backend, c.args.LazyCacheTTL > 0, expiredMsgTtl)
 	if lazyHit {
 		c.lazyHitTotal.Inc()
+		c.lazyHitCount.Add(1)
 		c.doLazyUpdate(msgKey, qCtx, next)
 	}
 	if cachedResp != nil { // cache hit
 		c.hitTotal.Inc()
+		c.hitCount.Add(1)
 		cachedResp.Id = q.Id // change msg id
 		qCtx.SetResponse(cachedResp)
 	}
@@ -213,6 +222,23 @@ func (c *Cache) Exec(ctx context.Context, qCtx *query_context.Context, next sequ
 		c.updatedKey.Add(1)
 	}
 	return err
+}
+
+func (c *Cache) CacheStats() runtime_stats.CacheStats {
+	queryTotal := c.queryCount.Load()
+	hitTotal := c.hitCount.Load()
+	hitRate := 0.0
+	if queryTotal > 0 {
+		hitRate = float64(hitTotal) / float64(queryTotal)
+	}
+	return runtime_stats.CacheStats{
+		Tag:          c.metricsTag,
+		QueryTotal:   queryTotal,
+		HitTotal:     hitTotal,
+		LazyHitTotal: c.lazyHitCount.Load(),
+		Size:         c.backend.Len(),
+		HitRate:      hitRate,
+	}
 }
 
 // doLazyUpdate starts a new goroutine to execute next node and update the cache in the background.

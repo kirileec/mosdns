@@ -36,8 +36,9 @@ func NewHandler(bp *coremain.BP, entry string) (server.Handler, error) {
 	}
 
 	handlerOpts := server_handler.EntryHandlerOpts{
-		Logger: bp.L(),
-		Entry:  exec,
+		Logger:        bp.L(),
+		Entry:         exec,
+		QueryRecorder: bp.M().GetRuntimeStats(),
 	}
 	return server_handler.NewEntryHandler(handlerOpts), nil
 }

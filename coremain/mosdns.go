@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/IrineSistiana/mosdns/v5/mlog"
+	"github.com/IrineSistiana/mosdns/v5/pkg/runtime_stats"
 	"github.com/IrineSistiana/mosdns/v5/pkg/safe_close"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,10 +45,20 @@ type Mosdns struct {
 	httpMux    *chi.Mux
 	metricsReg *prometheus.Registry
 	sc         *safe_close.SafeClose
+	stats      *runtime_stats.Stats
+	configFile string
 }
 
 // NewMosdns initializes a mosdns instance and its plugins.
 func NewMosdns(cfg *Config) (*Mosdns, error) {
+	return NewMosdnsWithOptions(cfg, Options{})
+}
+
+type Options struct {
+	ConfigFile string
+}
+
+func NewMosdnsWithOptions(cfg *Config, opts Options) (*Mosdns, error) {
 	// Init logger.
 	lg, err := mlog.NewLogger(cfg.Log)
 	if err != nil {
@@ -60,6 +71,8 @@ func NewMosdns(cfg *Config) (*Mosdns, error) {
 		httpMux:    chi.NewRouter(),
 		metricsReg: newMetricsReg(),
 		sc:         safe_close.NewSafeClose(),
+		stats:      runtime_stats.New(0, runtime_stats.RedisConfig{}),
+		configFile: opts.ConfigFile,
 	}
 	// This must be called after m.httpMux and m.metricsReg been set.
 	m.initHttpMux()
@@ -101,6 +114,7 @@ func NewMosdns(cfg *Config) (*Mosdns, error) {
 					_ = closer.Close()
 				}
 			}
+			_ = m.stats.Close()
 			m.logger.Info("all plugins were closed")
 		}()
 	})
@@ -130,6 +144,7 @@ func NewTestMosdnsWithPlugins(p map[string]any) *Mosdns {
 		plugins:    p,
 		metricsReg: newMetricsReg(),
 		sc:         safe_close.NewSafeClose(),
+		stats:      runtime_stats.New(0, runtime_stats.RedisConfig{}),
 	}
 }
 
@@ -152,9 +167,25 @@ func (m *Mosdns) GetPlugin(tag string) any {
 	return m.plugins[tag]
 }
 
+func (m *Mosdns) GetPlugins() map[string]any {
+	plugins := make(map[string]any, len(m.plugins))
+	for tag, plugin := range m.plugins {
+		plugins[tag] = plugin
+	}
+	return plugins
+}
+
 // GetMetricsReg returns a prometheus.Registerer with a prefix of "mosdns_"
 func (m *Mosdns) GetMetricsReg() prometheus.Registerer {
 	return prometheus.WrapRegistererWithPrefix("mosdns_", m.metricsReg)
+}
+
+func (m *Mosdns) GetRuntimeStats() *runtime_stats.Stats {
+	return m.stats
+}
+
+func (m *Mosdns) ConfigFile() string {
+	return m.configFile
 }
 
 func (m *Mosdns) GetAPIRouter() *chi.Mux {

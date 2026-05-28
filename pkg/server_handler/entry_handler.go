@@ -60,6 +60,12 @@ type EntryHandlerOpts struct {
 	// QueryTimeout limits the timeout value of each query.
 	// Default is defaultQueryTimeout.
 	QueryTimeout time.Duration
+
+	QueryRecorder QueryRecorder
+}
+
+type QueryRecorder interface {
+	RecordQuery(qCtx *query_context.Context, resp *dns.Msg, execErr error)
 }
 
 func (opts *EntryHandlerOpts) init() {
@@ -112,6 +118,9 @@ func (h *EntryHandler) Handle(ctx context.Context, q *dns.Msg, serverMeta server
 		resp = new(dns.Msg)
 		resp.SetReply(q)
 		resp.Rcode = dns.RcodeRefused
+	}
+	if h.opts.QueryRecorder != nil {
+		h.opts.QueryRecorder.RecordQuery(qCtx, resp, err)
 	}
 	// We assume that our server is a forwarder.
 	resp.RecursionAvailable = true
