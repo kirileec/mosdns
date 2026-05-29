@@ -327,6 +327,39 @@ function qtypeName(type) {
   return names[type] || String(type || '-');
 }
 
+function rcodeName(rcode) {
+  if (rcode === null || rcode === undefined || rcode === '') return '-';
+  const names = {
+    0: 'NOERROR',
+    1: 'FORMERR',
+    2: 'SERVFAIL',
+    3: 'NXDOMAIN',
+    4: 'NOTIMP',
+    5: 'REFUSED',
+    6: 'YXDOMAIN',
+    7: 'YXRRSET',
+    8: 'NXRRSET',
+    9: 'NOTAUTH',
+    10: 'NOTZONE',
+    11: 'DSOTYPENI',
+    16: 'BADVERS',
+    17: 'BADKEY',
+    18: 'BADTIME',
+    19: 'BADMODE',
+    20: 'BADNAME',
+    21: 'BADALG',
+    22: 'BADTRUNC',
+    23: 'BADCOOKIE',
+  };
+  return names[Number(rcode)] || String(rcode);
+}
+
+function rcodeWithCode(rcode) {
+  const name = rcodeName(rcode);
+  if (name === '-') return name;
+  return `${name} (${rcode})`;
+}
+
 function protocolName(protocol) {
   const value = String(protocol || '').toLowerCase();
   const names = { udp: 'UDP', tcp: 'TCP', dot: 'DoT', doh: 'DoH', doq: 'DoQ' };
@@ -521,7 +554,7 @@ function renderRefreshResult(result) {
   const rows = (result.results || []).map((item) => {
     const answers = item.answers && item.answers.length > 0 ? item.answers.join(', ') : '-';
     const ttls = item.ttls && item.ttls.length > 0 ? item.ttls.map((ttl) => `${ttl}s`).join(', ') : '-';
-    const status = item.error ? item.error : `RCODE ${item.rcode}`;
+    const status = item.error ? item.error : rcodeWithCode(item.rcode);
     return `
       <div class="refresh-result-row">
         <span>${escapeHtml(item.qtype || '-')}</span>
@@ -609,7 +642,7 @@ function logRow(log, compact, index) {
       <span class="log-answer" title="${escapeHtml(renderAnswer(log))}">${escapeHtml(renderAnswer(log))}</span>
       <span class="log-ttl" title="${escapeHtml(renderTTL(log))}">${escapeHtml(renderTTL(log))}</span>
       <span>${qtypeName(log.qtype)}</span>
-      <span class="rcode ${error ? 'is-error' : ''}">RCODE ${log.rcode ?? '-'}</span>
+      <span class="rcode ${error ? 'is-error' : ''}" title="${escapeHtml(rcodeWithCode(log.rcode))}">${escapeHtml(rcodeName(log.rcode))}</span>
       <span>${Number(log.elapsed_ms || 0)}ms</span>
       ${compact ? '' : `<span title="${escapeHtml(log.client || '')}">${escapeHtml(log.client || '-')}</span>`}
       ${compact ? '' : `<button class="detail-button" type="button" data-log-index="${index}">${t('detailsButton')}</button>`}
@@ -629,7 +662,7 @@ function openLogDetail(index) {
     ['QName', log.qname || '-'],
     [t('detailQType'), qtypeName(log.qtype)],
     [t('detailQClass'), log.qclass || '-'],
-    ['RCODE', log.rcode ?? '-'],
+    ['RCODE', rcodeWithCode(log.rcode)],
     [t('logHeadLatency'), `${Number(log.elapsed_ms || 0)}ms`],
     ['TTL', renderTTL(log)],
     [t('detailAnswers'), renderAnswer(log)],
