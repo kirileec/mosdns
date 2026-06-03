@@ -324,7 +324,7 @@ p { margin: 0; }
 .log-table { display: grid; align-content: start; grid-auto-rows: max-content; gap: 8px; max-height: 68vh; overflow: auto; padding-right: 4px; }
 .panel.full-height .log-table { flex: 1; min-height: 0; max-height: none; }
 .log-table.compact { max-height: 320px; }
-.log-row { display: grid; grid-template-columns: 168px 64px 82px minmax(140px, 1fr) minmax(150px, 1fr) 88px 70px 88px 70px minmax(120px, 0.7fr) 82px; gap: 10px; align-items: center; padding: 11px 12px; color: var(--muted-strong); font-size: 13px; }
+.log-row { display: grid; grid-template-columns: 168px 64px 82px 120px minmax(140px, 1fr) minmax(150px, 1fr) 88px 70px 88px 70px minmax(120px, 0.7fr) 82px; gap: 10px; align-items: center; padding: 11px 12px; color: var(--muted-strong); font-size: 13px; }
 .log-row.log-head { position: sticky; top: 0; z-index: 1; border-color: var(--line-strong); background: rgba(15, 23, 42, 0.96); color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .log-table.compact .log-row { grid-template-columns: 108px 64px minmax(140px, 1fr) minmax(150px, 1fr) 88px 70px 88px 70px; }
 .log-qname { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -352,6 +352,8 @@ p { margin: 0; }
 .status.down { background: rgba(239, 68, 68, 0.14); color: #fecaca; }
 .status.degraded { background: rgba(245, 158, 11, 0.16); color: #fde68a; }
 .upstream-addr { margin-top: 8px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upstream-info { justify-self: start; padding: 3px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.12); color: #fde68a; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.test-upstream-button { margin-top: 12px; width: 100%; }
 .stat-pairs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
 .stat-pair { padding: 10px; border-radius: 12px; background: rgba(15, 23, 42, 0.62); }
 .stat-pair span { display: block; color: var(--muted); font-size: 11px; }

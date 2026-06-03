@@ -20,6 +20,7 @@ import (
 	"github.com/IrineSistiana/mosdns/v5/coremain"
 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
 	"github.com/IrineSistiana/mosdns/v5/pkg/runtime_stats"
+	fastforward "github.com/IrineSistiana/mosdns/v5/plugin/executable/forward"
 	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
 	"github.com/go-chi/chi/v5"
 	"github.com/miekg/dns"
@@ -82,6 +83,7 @@ func (p *WebUI) api() *chi.Mux {
 		r.Get("/cache", p.handleCache)
 		r.Post("/cache/refresh", p.handleRefreshCache)
 		r.Get("/upstreams", p.handleUpstreams)
+		r.Post("/query-test", p.handleQueryTest)
 		r.Get("/config", p.handleGetConfig)
 		r.Put("/config", p.handlePutConfig)
 		r.Post("/config/validate", p.handleValidateConfig)
@@ -409,6 +411,89 @@ func (p *WebUI) handleUpstreams(w http.ResponseWriter, req *http.Request) {
 		return out[i].ForwardTag < out[j].ForwardTag
 	})
 	writeJSON(w, out)
+}
+
+type queryTestReq struct {
+	Domain      string `json:"domain"`
+	QType       string `json:"qtype"`
+	UpstreamTag  string `json:"upstream_tag"`
+	UpstreamAddr string `json:"upstream_addr"`
+}
+
+type queryTestResult struct {
+	Domain    string   `json:"domain"`
+	QType     string   `json:"qtype"`
+	RCode     int      `json:"rcode"`
+	Answers   []string `json:"answers,omitempty"`
+	TTLs      []uint32 `json:"ttls,omitempty"`
+	ElapsedMS int64    `json:"elapsed_ms"`
+	Error     string   `json:"error,omitempty"`
+	Upstream  string   `json:"upstream"`
+}
+
+func (p *WebUI) handleQueryTest(w http.ResponseWriter, req *http.Request) {
+	var in queryTestReq
+	if err := json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&in); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	domain := strings.TrimSpace(in.Domain)
+	if domain == "" {
+		http.Error(w, "domain is required", http.StatusBadRequest)
+		return
+	}
+	domain = dns.Fqdn(domain)
+
+	qtype := dns.TypeA
+	switch strings.ToUpper(strings.TrimSpace(in.QType)) {
+	case "AAAA":
+		qtype = dns.TypeAAAA
+	case "HTTPS":
+		qtype = dns.TypeHTTPS
+	}
+
+	start := time.Now()
+	q := new(dns.Msg)
+	q.SetQuestion(domain, qtype)
+	qCtx := query_context.NewContext(q)
+
+	// Find the forward plugin and exchange directly
+	var forwardPlugin *fastforward.Forward
+	for _, plugin := range p.bp.M().GetPlugins() {
+		if f, ok := plugin.(*fastforward.Forward); ok {
+			forwardPlugin = f
+			break
+		}
+	}
+
+	result := queryTestResult{
+		Domain:   domain,
+		QType:    dns.TypeToString[qtype],
+		RCode:    dns.RcodeServerFailure,
+		Upstream: in.UpstreamTag,
+	}
+
+	if forwardPlugin == nil {
+		result.Error = "forward plugin not found"
+		writeJSON(w, result)
+		return
+	}
+
+	// Use the upstream directly
+	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
+	defer cancel()
+
+	resp, err := forwardPlugin.ExchangeUpstream(ctx, qCtx, in.UpstreamTag, in.UpstreamAddr)
+	result.ElapsedMS = time.Since(start).Milliseconds()
+
+	if err != nil {
+		result.Error = err.Error()
+	} else if resp != nil {
+		result.RCode = resp.Rcode
+		result.Answers, result.TTLs = summarizeAnswers(resp)
+	}
+
+	writeJSON(w, result)
 }
 
 func (p *WebUI) handleGetConfig(w http.ResponseWriter, req *http.Request) {

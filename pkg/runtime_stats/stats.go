@@ -20,18 +20,20 @@ const (
 )
 
 type QueryRecord struct {
-	Time      time.Time `json:"time"`
-	Client    string    `json:"client,omitempty"`
-	Protocol  string    `json:"protocol,omitempty"`
-	CacheHit  bool      `json:"cache_hit,omitempty"`
-	QName     string    `json:"qname"`
-	QType     uint16    `json:"qtype"`
-	QClass    uint16    `json:"qclass"`
-	RCode     int       `json:"rcode"`
-	Answers   []string  `json:"answers,omitempty"`
-	TTLs      []uint32  `json:"ttls,omitempty"`
-	ElapsedMS int64     `json:"elapsed_ms"`
-	Error     string    `json:"error,omitempty"`
+	Time          time.Time `json:"time"`
+	Client        string    `json:"client,omitempty"`
+	Protocol      string    `json:"protocol,omitempty"`
+	CacheHit      bool      `json:"cache_hit,omitempty"`
+	QName         string    `json:"qname"`
+	QType         uint16    `json:"qtype"`
+	QClass        uint16    `json:"qclass"`
+	RCode         int       `json:"rcode"`
+	Answers       []string  `json:"answers,omitempty"`
+	TTLs          []uint32  `json:"ttls,omitempty"`
+	ElapsedMS     int64     `json:"elapsed_ms"`
+	Error         string    `json:"error,omitempty"`
+	UpstreamTag   string    `json:"upstream_tag,omitempty"`
+	UpstreamAddr  string    `json:"upstream_addr,omitempty"`
 }
 
 type CountPoint struct {
@@ -112,6 +114,12 @@ type UpstreamStatsProvider interface {
 }
 
 var cacheHitKey = query_context.RegKey()
+var upstreamKey = query_context.RegKey()
+
+type upstreamInfo struct {
+	Tag  string
+	Addr string
+}
 
 func MarkCacheHit(qCtx *query_context.Context) {
 	qCtx.StoreValue(cacheHitKey, true)
@@ -120,6 +128,22 @@ func MarkCacheHit(qCtx *query_context.Context) {
 func isCacheHit(qCtx *query_context.Context) bool {
 	v, ok := qCtx.GetValue(cacheHitKey)
 	return ok && v == true
+}
+
+func SetUpstream(qCtx *query_context.Context, tag, addr string) {
+	qCtx.StoreValue(upstreamKey, upstreamInfo{Tag: tag, Addr: addr})
+}
+
+func getUpstream(qCtx *query_context.Context) (string, string) {
+	v, ok := qCtx.GetValue(upstreamKey)
+	if !ok {
+		return "", ""
+	}
+	info, ok := v.(upstreamInfo)
+	if !ok {
+		return "", ""
+	}
+	return info.Tag, info.Addr
 }
 
 type Stats struct {
@@ -210,6 +234,7 @@ func (s *Stats) RecordQuery(qCtx *query_context.Context, resp *dns.Msg, execErr 
 	if execErr != nil {
 		r.Error = execErr.Error()
 	}
+	r.UpstreamTag, r.UpstreamAddr = getUpstream(qCtx)
 
 	s.record(r)
 }

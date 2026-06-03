@@ -243,6 +243,40 @@ func (f *Forward) UpstreamStats() []runtime_stats.UpstreamStats {
 	return out
 }
 
+func (f *Forward) ExchangeUpstream(ctx context.Context, qCtx *query_context.Context, tag, addr string) (*dns.Msg, error) {
+	var target *upstreamWrapper
+	for _, u := range f.us {
+		if (tag != "" && u.cfg.Tag == tag) || (addr != "" && u.cfg.Addr == addr) {
+			target = u
+			break
+		}
+	}
+	if target == nil {
+		return nil, fmt.Errorf("upstream not found: tag=%s addr=%s", tag, addr)
+	}
+
+	queryPayload, err := pool.PackBuffer(qCtx.Q())
+	if err != nil {
+		return nil, err
+	}
+	defer pool.ReleaseBuf(queryPayload)
+
+	upstreamCtx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+
+	respPayload, err := target.ExchangeContext(upstreamCtx, *queryPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	r := new(dns.Msg)
+	if err := r.Unpack(*respPayload); err != nil {
+		return nil, err
+	}
+	pool.ReleaseBuf(respPayload)
+	return r, nil
+}
+
 func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us []*upstreamWrapper) (*dns.Msg, error) {
 	if len(us) == 0 {
 		return nil, errors.New("no upstream to exchange")
@@ -265,6 +299,7 @@ func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us 
 	type res struct {
 		r   *dns.Msg
 		err error
+		u   *upstreamWrapper
 	}
 
 	resChan := make(chan res)
@@ -275,14 +310,14 @@ func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us 
 	for i := 0; i < concurrent; i++ {
 		u := us[(r+i)%len(us)]
 		qc := copyPayload(queryPayload)
-		go func(uqid uint32, question dns.Question) {
+		go func(uqid uint32, question dns.Question, uw *upstreamWrapper) {
 			defer pool.ReleaseBuf(qc)
 			// Give each upstream a fixed timeout to finish the query.
 			upstreamCtx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 			defer cancel()
 
 			var r *dns.Msg
-			respPayload, err := u.ExchangeContext(upstreamCtx, *qc)
+			respPayload, err := uw.ExchangeContext(upstreamCtx, *qc)
 			if err != nil {
 				f.logger.Warn(
 					"upstream error",
@@ -290,7 +325,7 @@ func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us 
 					zap.String("qname", question.Name),
 					zap.Uint16("qclass", question.Qclass),
 					zap.Uint16("qtype", question.Qtype),
-					zap.String("upstream", u.name()),
+					zap.String("upstream", uw.name()),
 					zap.Error(err),
 				)
 			} else {
@@ -302,10 +337,10 @@ func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us 
 				}
 			}
 			select {
-			case resChan <- res{r: r, err: err}:
+			case resChan <- res{r: r, err: err, u: uw}:
 			case <-done:
 			}
-		}(qCtx.Id(), qCtx.QQuestion())
+		}(qCtx.Id(), qCtx.QQuestion(), u)
 	}
 
 	for i := 0; i < concurrent; i++ {
@@ -319,6 +354,9 @@ func (f *Forward) exchange(ctx context.Context, qCtx *query_context.Context, us 
 			// Retry until the last
 			if i < concurrent-1 && r.Rcode != dns.RcodeSuccess && r.Rcode != dns.RcodeNameError {
 				continue
+			}
+			if res.u != nil {
+				runtime_stats.SetUpstream(qCtx, res.u.cfg.Tag, res.u.cfg.Addr)
 			}
 			return r, nil
 		case <-ctx.Done():

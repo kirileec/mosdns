@@ -8,10 +8,11 @@ RUN go build -ldflags "-s -w -X main.version=$(git describe --tags --long --alwa
 FROM alpine:latest
 
 COPY --from=builder /root/src/mosdns /usr/bin/
+COPY --from=builder /root/src/webui /usr/share/mosdns/webui
+COPY docker-entrypoint.sh /usr/bin/docker-entrypoint.sh
 WORKDIR /etc/mosdns
-COPY --from=builder /root/src/webui ./webui
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && chmod +x /usr/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["mosdns"]
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["start"]

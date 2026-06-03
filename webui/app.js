@@ -81,6 +81,7 @@ const translations = {
     logHeadTime: 'Time',
     logHeadProto: 'Proto',
     logHeadSource: 'Source',
+    logHeadUpstream: 'Upstream',
     logHeadQName: 'QName',
     logHeadAnswer: 'Answer',
     logHeadTTL: 'TTL',
@@ -103,6 +104,18 @@ const translations = {
     upstreamServersDesc: 'Status, latency, success rate, and in-flight requests',
     upstreamGroupCount: '{count} upstreams',
     noUpstreams: 'No tagged upstream statistics yet',
+    testQueryButton: 'Test',
+    testQueryTitle: 'Test Query',
+    testQueryDomain: 'Domain',
+    testQueryType: 'Type',
+    testQueryResult: 'Result',
+    testQueryUpstream: 'Upstream',
+    testQueryTime: 'Time',
+    testQueryAnswers: 'Answers',
+    testQueryError: 'Error',
+    testQueryWorking: 'Querying...',
+    testQuerySuccess: 'Query successful',
+    testQueryFailed: 'Query failed',
     statQueries: 'Queries',
     statSuccessRate: 'Success Rate',
     statLastLatency: 'Last Latency',
@@ -207,6 +220,7 @@ const translations = {
     logHeadTime: '时间',
     logHeadProto: '协议',
     logHeadSource: '来源',
+    logHeadUpstream: '上游',
     logHeadQName: '域名',
     logHeadAnswer: '响应',
     logHeadTTL: 'TTL',
@@ -229,6 +243,18 @@ const translations = {
     upstreamServersDesc: '状态、延迟、成功率和并发请求',
     upstreamGroupCount: '{count} 个上游',
     noUpstreams: '暂无带标签的上游统计',
+    testQueryButton: '测试',
+    testQueryTitle: '测试查询',
+    testQueryDomain: '域名',
+    testQueryType: '类型',
+    testQueryResult: '结果',
+    testQueryUpstream: '上游',
+    testQueryTime: '时间',
+    testQueryAnswers: '响应',
+    testQueryError: '错误',
+    testQueryWorking: '正在查询...',
+    testQuerySuccess: '查询成功',
+    testQueryFailed: '查询失败',
     statQueries: '查询数',
     statSuccessRate: '成功率',
     statLastLatency: '最近延迟',
@@ -618,6 +644,7 @@ function logHeader() {
       <span>${t('logHeadTime')}</span>
       <span>${t('logHeadProto')}</span>
       <span>${t('logHeadSource')}</span>
+      <span>${t('logHeadUpstream')}</span>
       <span>${t('logHeadQName')}</span>
       <span>${t('logHeadAnswer')}</span>
       <span>${t('logHeadTTL')}</span>
@@ -633,11 +660,13 @@ function logHeader() {
 function logRow(log, compact, index) {
   const error = log.rcode !== 0 || log.error;
   const source = log.cache_hit ? t('sourceCache') : t('sourceUpstream');
+  const upstream = log.upstream_tag || log.upstream_addr || '-';
   return `
     <div class="log-row">
       <span>${compact ? fmtTime(log.time) : fmtDateTime(log.time)}</span>
       <span class="protocol-badge">${protocolName(log.protocol)}</span>
       ${compact ? '' : `<span class="source-badge ${log.cache_hit ? 'is-cache' : ''}">${source}</span>`}
+      ${compact ? '' : `<span class="upstream-info" title="${escapeHtml(log.upstream_addr || '')}">${escapeHtml(upstream)}</span>`}
       <span class="log-qname" title="${escapeHtml(log.qname)}">${escapeHtml(log.qname || '-')}</span>
       <span class="log-answer" title="${escapeHtml(renderAnswer(log))}">${escapeHtml(renderAnswer(log))}</span>
       <span class="log-ttl" title="${escapeHtml(renderTTL(log))}">${escapeHtml(renderTTL(log))}</span>
@@ -654,10 +683,12 @@ function openLogDetail(index) {
   const log = state.logs[Number(index)];
   if (!log) return;
   const source = log.cache_hit ? t('sourceCache') : t('sourceUpstream');
+  const upstream = log.upstream_tag || log.upstream_addr || '-';
   const pairs = [
     [t('logHeadTime'), fmtDateTime(log.time)],
     [t('detailProtocol'), protocolName(log.protocol)],
     [t('logHeadSource'), source],
+    [t('logHeadUpstream'), upstream],
     [t('logHeadClient'), log.client || '-'],
     ['QName', log.qname || '-'],
     [t('detailQType'), qtypeName(log.qtype)],
@@ -793,6 +824,7 @@ function renderUpstreamCard(u) {
         <div class="stat-pair"><span>${t('statLastLatency')}</span><strong>${u.last_latency_ms || 0}ms</strong></div>
         <div class="stat-pair"><span>${t('statInFlight')}</span><strong>${u.inflight || 0}</strong></div>
       </div>
+      <button class="button ghost test-upstream-button" type="button" data-upstream-tag="${escapeHtml(u.tag || '')}" data-upstream-addr="${escapeHtml(u.addr || '')}">${t('testQueryButton')}</button>
     </div>
   `;
 }
@@ -801,6 +833,32 @@ async function loadConfig() {
   const text = await request('/config');
   $('configEditor').value = text;
   setDynamicText('configMessage', t('configLoaded'));
+}
+
+async function testUpstreamQuery(tag, addr) {
+  const domain = prompt(t('testQueryDomain') + ':', 'example.com');
+  if (!domain) return;
+  
+  showToast(t('testQueryWorking'));
+  try {
+    const result = await request('/query-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domain: domain,
+        qtype: 'A',
+        upstream_tag: tag,
+        upstream_addr: addr,
+      }),
+    });
+    
+    const answers = result.answers && result.answers.length > 0 ? result.answers.join(', ') : '-';
+    const message = `${t('testQueryUpstream')}: ${tag || addr}\n${t('testQueryTime')}: ${result.elapsed_ms || 0}ms\n${t('testQueryAnswers')}: ${answers}`;
+    alert(message);
+    showToast(t('testQuerySuccess'));
+  } catch (error) {
+    showToast(t('testQueryFailed') + ': ' + error.message);
+  }
 }
 
 async function validateConfig() {
@@ -894,6 +952,11 @@ document.addEventListener('click', (event) => {
   const detailButton = event.target.closest('[data-log-index]');
   if (detailButton) {
     openLogDetail(detailButton.dataset.logIndex);
+    return;
+  }
+  const testButton = event.target.closest('.test-upstream-button');
+  if (testButton) {
+    testUpstreamQuery(testButton.dataset.upstreamTag, testButton.dataset.upstreamAddr);
     return;
   }
   const link = event.target.closest('[data-view]');
